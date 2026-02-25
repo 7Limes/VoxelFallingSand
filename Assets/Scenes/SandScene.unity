@@ -237,6 +237,7 @@ GameObject:
   m_Component:
   - component: {fileID: 735151734}
   - component: {fileID: 735151733}
+  - component: {fileID: 735151735}
   m_Layer: 0
   m_Name: FallingSand
   m_TagString: Untagged
@@ -256,6 +257,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a630e6ab9fae4c7448aa7bf9ad83ea10, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  meshFilter: {fileID: 735151735}
   volumeSize: {x: 64, y: 64, z: 64}
   voxelSize: 0.01
 --- !u!4 &735151734
@@ -273,6 +275,14 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!33 &735151735
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 735151732}
+  m_Mesh: {fileID: 0}
 --- !u!1 &890984638
 GameObject:
   m_ObjectHideFlags: 0
@@ -636,7 +646,7 @@ GameObject:
   - component: {fileID: 2108936560}
   - component: {fileID: 2108936559}
   m_Layer: 0
-  m_Name: Cube
+  m_Name: Floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -737,6 +747,6 @@ SceneRoots:
   m_Roots:
   - {fileID: 890984640}
   - {fileID: 1553439821}
-  - {fileID: 2108936562}
   - {fileID: 735151734}
+  - {fileID: 2108936562}
   - {fileID: 293677043}
