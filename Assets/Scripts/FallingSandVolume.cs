@@ -1,12 +1,16 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 public class FallingSandVolume : MonoBehaviour
 {
-    [SerializeField] private MeshFilter meshFilter;
+    [SerializeField] private GameObject meshObject;
 
     [SerializeField] private Vector3Int volumeSize;
     [SerializeField] private float voxelSize = 0.01f;
+
+    private MeshFilter meshFilter;
 
     private int XZ_AREA = 0;
     private int XYZ_VOLUME = 0;
@@ -31,11 +35,36 @@ public class FallingSandVolume : MonoBehaviour
     const int ADJ_PY = 4;
     const int ADJ_NY = 5;
 
+    private static readonly Vector3[][] FaceCoordinates = new Vector3[][]
+    {
+        // ADJ_PX
+        new Vector3[] { new(1, 0, 0), new(1, 0, 1), new(1, 1, 0), new(1, 1, 1) },
+
+        // ADJ_NX
+        new Vector3[] { new(0, 0, 1), new(0, 0, 0), new(0, 1, 1), new(0, 1, 0) },
+
+        // ADJ_PZ 
+        new Vector3[] { new(1, 0, 1), new(0, 0, 1), new(1, 1, 1), new(0, 1, 1) },
+
+        // ADJ_NZ
+        new Vector3[] { new(0, 0, 0), new(1, 0, 0), new(0, 1, 0), new(1, 1, 0) },
+
+        // ADJ_PY
+        new Vector3[] { new(0, 1, 0), new(1, 1, 0), new(0, 1, 1), new(1, 1, 1) },
+
+        // ADJ_NY
+        new Vector3[] { new(0, 0, 1), new(1, 0, 1), new(0, 0, 0), new(1, 0, 0) }
+    };
+
     private Voxel[] readVolume;
     private Voxel[] writeVolume;
 
     void Start()
     {
+        meshFilter = meshObject.GetComponent<MeshFilter>();
+        meshObject.transform.localScale = new Vector3(voxelSize, voxelSize, voxelSize);
+        meshObject.transform.localPosition = new Vector3(volumeSize.x, volumeSize.y, volumeSize.z) * voxelSize / -2;
+
         XZ_AREA = volumeSize.x * volumeSize.z;
         XYZ_VOLUME = XZ_AREA * volumeSize.y;
         readVolume = new Voxel[XYZ_VOLUME+2];
@@ -54,6 +83,7 @@ public class FallingSandVolume : MonoBehaviour
 
         // Clear the write buffer
         Array.Fill(writeVolume, Voxel.None);
+        writeVolume[3000] = Voxel.Sand;
         writeVolume[0] = Voxel.Wall;
         writeVolume[XYZ_VOLUME + 1] = Voxel.Wall;
 
@@ -94,6 +124,8 @@ public class FallingSandVolume : MonoBehaviour
     private void GenerateMesh()
     {
         int[] neighbors = new int[6];
+        List<Vector3> meshVertices = new List<Vector3>();
+        List<int> meshTriangles = new List<int>();
 
         for (int i = 0; i < XYZ_VOLUME; i++)
         {
@@ -106,14 +138,38 @@ public class FallingSandVolume : MonoBehaviour
                     Voxel neighbor = readVolume[neighbors[j]];
                     if (neighbor == Voxel.None || neighbor == Voxel.Wall)
                     {
-                        // TODO: Add a mesh face here
+                        AddMeshFace(meshVertices, meshTriangles, i, j);
                     }
                 }
             }
         }
+
+        Mesh mesh = new Mesh();
+        mesh.SetVertices(meshVertices);
+        mesh.SetTriangles(meshTriangles, 0);
+        meshFilter.mesh = mesh;
+    }
+
+    private void AddMeshFace(List<Vector3> vertices, List<int> tris, int index, int direction)
+    {
+        int x = 0;
+        int y = 0;
+        int z = 0;
+        IndexToPos(ref x, ref y, ref z, index);
+        Vector3 pos = new Vector3(x, y, z);
+
+        int vindex = vertices.Count;
+        Vector3[] addedVertices = FaceCoordinates[direction];
+        for (int i = 0; i < 4; i++)
+        {
+            vertices.Add(pos + addedVertices[i]);
+        }
+
+        tris.AddRange(new int[] { vindex, vindex+2, vindex+1, vindex+1, vindex+2, vindex+3 });
     }
 
     private void IndexToPos(ref int x, ref int y, ref int z, int index) {
+        index -= 1;
         x = index % volumeSize.x;
         z = index / volumeSize.x % volumeSize.z;
         y = index / (XZ_AREA);
@@ -152,11 +208,11 @@ public class FallingSandVolume : MonoBehaviour
         int z = 0;
         IndexToPos(ref x, ref y, ref z, index);
 
-        dest[DOWN] = PosToIndex(x, y+1, z);
-        dest[DOWN_PX] = PosToIndex(x+1, y+1, z);
-        dest[DOWN_NX] = PosToIndex(x-1, x+1, z);
-        dest[DOWN_PZ] = PosToIndex(x, y, z+1);
-        dest[DOWN_NZ] = PosToIndex(x, y, z-1);
+        dest[DOWN] = PosToIndex(x, y-1, z);
+        dest[DOWN_PX] = PosToIndex(x+1, y-1, z);
+        dest[DOWN_NX] = PosToIndex(x-1, y-1, z);
+        dest[DOWN_PZ] = PosToIndex(x, y-1, z+1);
+        dest[DOWN_NZ] = PosToIndex(x, y-1, z-1);
     }
 
     private void OnDrawGizmos()
