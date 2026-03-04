@@ -257,8 +257,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   meshObject: {fileID: 1254303553}
-  volumeSize: {x: 16, y: 16, z: 16}
-  voxelSize: 0.03
+  volumeSize: {x: 64, y: 64, z: 64}
+  voxelSize: 0.01
+  stepsPerSecond: 20
 --- !u!4 &735151734
 Transform:
   m_ObjectHideFlags: 0
@@ -268,7 +269,7 @@ Transform:
   m_GameObject: {fileID: 735151732}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1.348, y: 1.355, z: 0}
+  m_LocalPosition: {x: 1.348, y: 1.39, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:

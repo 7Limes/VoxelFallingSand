@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UIElements;
 
 public class FallingSandVolume : MonoBehaviour
 {
@@ -10,10 +9,14 @@ public class FallingSandVolume : MonoBehaviour
     [SerializeField] private Vector3Int volumeSize;
     [SerializeField] private float voxelSize = 0.01f;
 
+    [SerializeField] private float stepsPerSecond = 60;
+
     private MeshFilter meshFilter;
 
     private int XZ_AREA = 0;
     private int XYZ_VOLUME = 0;
+
+    private float accumulatedTime = 0;
 
     enum Voxel : byte
     {
@@ -41,7 +44,7 @@ public class FallingSandVolume : MonoBehaviour
         new Vector3[] { new(1, 0, 0), new(1, 0, 1), new(1, 1, 0), new(1, 1, 1) },
 
         // ADJ_NX
-        new Vector3[] { new(0, 0, 1), new(0, 0, 0), new(0, 1, 1), new(0, 1, 0) },
+        new Vector3[] {  new(0, 1, 0), new(0, 1, 1),new(0, 0, 0), new(0, 0, 1) },
 
         // ADJ_PZ 
         new Vector3[] { new(1, 0, 1), new(0, 0, 1), new(1, 1, 1), new(0, 1, 1) },
@@ -53,7 +56,15 @@ public class FallingSandVolume : MonoBehaviour
         new Vector3[] { new(0, 1, 0), new(1, 1, 0), new(0, 1, 1), new(1, 1, 1) },
 
         // ADJ_NY
-        new Vector3[] { new(0, 0, 1), new(1, 0, 1), new(0, 0, 0), new(1, 0, 0) }
+        //new Vector3[] {new(1, 0, 1), new(0, 0, 0), new(1, 0, 0), new(0, 0, 1) }
+        new Vector3[] { new(0, 0, 1), new(1, 0, 1), new(0, 0, 0), new(1, 0, 0) },
+    };
+
+    private static readonly Vector3[] FaceNormals = new Vector3[]
+    {
+        new(1, 0, 0), new(-1, 0, 0),
+        new(0, 0, 1), new(0, 0, -1),
+        new(0, 1, 0), new(0, -1, 0)
     };
 
     private Voxel[] readVolume;
@@ -67,25 +78,34 @@ public class FallingSandVolume : MonoBehaviour
 
         XZ_AREA = volumeSize.x * volumeSize.z;
         XYZ_VOLUME = XZ_AREA * volumeSize.y;
-        readVolume = new Voxel[XYZ_VOLUME+2];
-        writeVolume = new Voxel[XYZ_VOLUME+2];
+        readVolume = new Voxel[XYZ_VOLUME];
+        writeVolume = new Voxel[XYZ_VOLUME];
     }
 
-    private void FixedUpdate()
+    private void Update()
     {
-        UpdateVolume();
-        GenerateMesh();
+        accumulatedTime += Time.deltaTime;
+        float secondsPerStep = 1 / stepsPerSecond;
+        if (accumulatedTime > secondsPerStep) {
+            int stepCount = (int) (accumulatedTime / secondsPerStep);
+            for (int i = 0; i < stepCount; i++)
+            {
+                UpdateVolume();
+                GenerateMesh();
+            }
+            accumulatedTime = 0;
+        }
     }
 
     private void UpdateVolume()
     {
         int[] neighbors = new int[6];
+        int[] randDirectionBuffer = new int[4] { DOWN_PX, DOWN_NX, DOWN_PZ, DOWN_NZ };
+        ShuffleArray(randDirectionBuffer);
 
         // Clear the write buffer
         Array.Fill(writeVolume, Voxel.None);
-        writeVolume[3000] = Voxel.Sand;
-        writeVolume[0] = Voxel.Wall;
-        writeVolume[XYZ_VOLUME + 1] = Voxel.Wall;
+        writeVolume[PosToIndex(32, 60, 32)] = Voxel.Sand;
 
         for (int i = 0; i < XYZ_VOLUME; i++)
         {
@@ -96,19 +116,26 @@ public class FallingSandVolume : MonoBehaviour
                 case Voxel.Sand:
                     GetSandNeighbors(neighbors, i);
                     int posYNeighbor = neighbors[DOWN];
-                    if (readVolume[posYNeighbor] == Voxel.None)
+                    if (GetVoxel(readVolume, posYNeighbor) == Voxel.None)
                     {
                         writeVolume[posYNeighbor] = Voxel.Sand;
                     }
                     else
                     {
-                        for (int j = DOWN_PX; j <= DOWN_NZ; j++)
+                        bool movedDiagonally = false;
+                        foreach (int j in randDirectionBuffer)
                         {
-                            if (readVolume[neighbors[j]] == Voxel.None)
+                            if (GetVoxel(readVolume, neighbors[j]) == Voxel.None)
                             {
                                 writeVolume[neighbors[j]] = Voxel.Sand;
+                                movedDiagonally = true;
+                                ShuffleArray(randDirectionBuffer);
                                 break;
                             }
+                        }
+                        if (!movedDiagonally)
+                        {
+                            writeVolume[i] = Voxel.Sand;
                         }
                     }
                     break;
@@ -126,6 +153,7 @@ public class FallingSandVolume : MonoBehaviour
         int[] neighbors = new int[6];
         List<Vector3> meshVertices = new List<Vector3>();
         List<int> meshTriangles = new List<int>();
+        List<Vector3> meshNormals = new List<Vector3>();
 
         for (int i = 0; i < XYZ_VOLUME; i++)
         {
@@ -135,10 +163,10 @@ public class FallingSandVolume : MonoBehaviour
                 GetAdjacentNeighbors(neighbors, i);
                 for (int j = ADJ_PX; j < ADJ_NY; j++)
                 {
-                    Voxel neighbor = readVolume[neighbors[j]];
+                    Voxel neighbor = GetVoxel(readVolume, neighbors[j]);
                     if (neighbor == Voxel.None || neighbor == Voxel.Wall)
                     {
-                        AddMeshFace(meshVertices, meshTriangles, i, j);
+                        AddMeshFace(meshVertices, meshTriangles, meshNormals, i, j);
                     }
                 }
             }
@@ -147,10 +175,11 @@ public class FallingSandVolume : MonoBehaviour
         Mesh mesh = new Mesh();
         mesh.SetVertices(meshVertices);
         mesh.SetTriangles(meshTriangles, 0);
+        mesh.SetNormals(meshNormals);
         meshFilter.mesh = mesh;
     }
 
-    private void AddMeshFace(List<Vector3> vertices, List<int> tris, int index, int direction)
+    private void AddMeshFace(List<Vector3> vertices, List<int> tris, List<Vector3> normals, int index, int direction)
     {
         int x = 0;
         int y = 0;
@@ -165,11 +194,17 @@ public class FallingSandVolume : MonoBehaviour
             vertices.Add(pos + addedVertices[i]);
         }
 
-        tris.AddRange(new int[] { vindex, vindex+2, vindex+1, vindex+1, vindex+2, vindex+3 });
+        Vector3 normal = FaceNormals[direction];
+        tris.AddRange(new int[] { vindex, vindex + 2, vindex + 1, vindex + 1, vindex + 2, vindex + 3 });
+        normals.AddRange(new Vector3[] { normal, normal, normal, normal });
+    }
+
+    private Voxel GetVoxel(Voxel[] buffer, int index)
+    {
+        return index == -1 ? Voxel.Wall : buffer[index];
     }
 
     private void IndexToPos(ref int x, ref int y, ref int z, int index) {
-        index -= 1;
         x = index % volumeSize.x;
         z = index / volumeSize.x % volumeSize.z;
         y = index / (XZ_AREA);
@@ -182,8 +217,12 @@ public class FallingSandVolume : MonoBehaviour
         // volume[1..XYZ_VOLUME] = actual voxel grid
         // volume[XYZ_VOLUME+1] = wall
         // This makes it so that any out of bounds indices automatically return a wall.
+        if (x < 0 || x >= volumeSize.x || y < 0 || y >= volumeSize.y || z < 0 || z >= volumeSize.z)
+        {
+            return -1;
+        }
 
-        return Mathf.Clamp(x + z * volumeSize.x + y * XZ_AREA, -1, XYZ_VOLUME) + 1;
+        return x + z * volumeSize.x + y * XZ_AREA;
     }
 
     private void GetAdjacentNeighbors(int[] dest, int index)
@@ -194,7 +233,7 @@ public class FallingSandVolume : MonoBehaviour
         IndexToPos(ref x, ref y, ref z, index);
 
         dest[ADJ_PX] = PosToIndex(x+1, y, z);
-        dest[ADJ_NX] = PosToIndex(x+1, y, z);
+        dest[ADJ_NX] = PosToIndex(x-1, y, z);
         dest[ADJ_PZ] = PosToIndex(x, y, z+1);
         dest[ADJ_NZ] = PosToIndex(x, y, z-1);
         dest[ADJ_PY] = PosToIndex(x, y+1, z);
@@ -220,5 +259,20 @@ public class FallingSandVolume : MonoBehaviour
         Vector3 fullVolumeSize = new Vector3(volumeSize.x, volumeSize.y, volumeSize.z) * voxelSize;
         Gizmos.color = new Color(1.0f, 1.0f, 1.0f, 0.75f);
         Gizmos.DrawWireCube(transform.position, fullVolumeSize);
+    }
+
+    private void ShuffleArray<T>(T[] array)
+    {
+        int n = array.Length;
+        for (int i = 0; i < n; i++)
+        {
+            // Pick a random index between the current index (i) and the end of the array
+            int randomIndex = UnityEngine.Random.Range(i, n);
+
+            // Swap the elements at the current index and the random index
+            T temp = array[i];
+            array[i] = array[randomIndex];
+            array[randomIndex] = temp;
+        }
     }
 }
