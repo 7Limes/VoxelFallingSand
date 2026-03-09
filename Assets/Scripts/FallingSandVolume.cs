@@ -18,7 +18,7 @@ public class FallingSandVolume : MonoBehaviour
 
     private float accumulatedTime = 0;
 
-    enum Voxel : byte
+    public enum Voxel : byte
     {
         None,
         Sand,
@@ -57,7 +57,7 @@ public class FallingSandVolume : MonoBehaviour
 
         // ADJ_NY
         //new Vector3[] {new(1, 0, 1), new(0, 0, 0), new(1, 0, 0), new(0, 0, 1) }
-        new Vector3[] { new(0, 0, 1), new(1, 0, 1), new(0, 0, 0), new(1, 0, 0) },
+        new Vector3[] { new(1, 0, 0), new(0, 0, 1), new(1, 0, 1), new(0, 0, 0) }
     };
 
     private static readonly Vector3[] FaceNormals = new Vector3[]
@@ -69,6 +69,33 @@ public class FallingSandVolume : MonoBehaviour
 
     private Voxel[] readVolume;
     private Voxel[] writeVolume;
+
+    public void SetVoxel(int x, int y, int z, Voxel voxel)
+    {
+        int index = PosToIndex(x, y, z);
+        readVolume[index] = voxel;
+    }
+
+    public Vector3Int GetPosInVolume(Vector3 vec)
+    {
+        Vector3 worldVolumeSize = new Vector3(volumeSize.x, volumeSize.y, volumeSize.z) * voxelSize;
+        Vector3 cornerPos = transform.position - worldVolumeSize / 2;
+
+        Vector3 offsetVec = vec - cornerPos;
+
+        if (offsetVec.x >= 0 && offsetVec.x < worldVolumeSize.x && 
+            offsetVec.y >= 0 && offsetVec.y < worldVolumeSize.y && 
+            offsetVec.z >= 0 && offsetVec.z < worldVolumeSize.z)
+        {
+            return new Vector3Int(
+                (int)(offsetVec.x / voxelSize),
+                (int)(offsetVec.y / voxelSize),
+                (int)(offsetVec.z / voxelSize)
+            );
+        }
+
+        return new Vector3Int(-1, -1, -1);
+    }
 
     void Start()
     {
@@ -105,7 +132,6 @@ public class FallingSandVolume : MonoBehaviour
 
         // Clear the write buffer
         Array.Fill(writeVolume, Voxel.None);
-        writeVolume[PosToIndex(32, 60, 32)] = Voxel.Sand;
 
         for (int i = 0; i < XYZ_VOLUME; i++)
         {
@@ -266,10 +292,8 @@ public class FallingSandVolume : MonoBehaviour
         int n = array.Length;
         for (int i = 0; i < n; i++)
         {
-            // Pick a random index between the current index (i) and the end of the array
             int randomIndex = UnityEngine.Random.Range(i, n);
 
-            // Swap the elements at the current index and the random index
             T temp = array[i];
             array[i] = array[randomIndex];
             array[randomIndex] = temp;
