@@ -73,7 +73,10 @@ public class FallingSandVolume : MonoBehaviour
     public void SetVoxel(int x, int y, int z, Voxel voxel)
     {
         int index = PosToIndex(x, y, z);
-        readVolume[index] = voxel;
+        if (index != -1)
+        {
+            readVolume[index] = voxel;
+        }
     }
 
     public Vector3Int GetPosInVolume(Vector3 vec)
