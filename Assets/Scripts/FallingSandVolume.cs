@@ -14,7 +14,8 @@ public class FallingSandVolume : MonoBehaviour
     {
         None,
         Sand,
-        Wall
+        Wall,
+        Water
     }
 
     struct VoxelUpdateJob : IJobParallelFor
@@ -122,6 +123,9 @@ public class FallingSandVolume : MonoBehaviour
                         }
                     }
                     break;
+                case Voxel.Water:
+                    writeVolume[i] = Voxel.Water;
+                    break;
             }
         }
     }
@@ -135,6 +139,7 @@ public class FallingSandVolume : MonoBehaviour
     [SerializeField] private int threadCount = 16;
 
     private MeshFilter meshFilter;
+    private Vector2Int meshMaterialSize;
 
     private int XZ_AREA = 0;
     private int XYZ_VOLUME = 0;
@@ -219,6 +224,9 @@ public class FallingSandVolume : MonoBehaviour
     void Start()
     {
         meshFilter = meshObject.GetComponent<MeshFilter>();
+        Material meshMaterial = meshObject.GetComponent<Renderer>().sharedMaterial;
+        meshMaterialSize = new Vector2Int(meshMaterial.mainTexture.width, meshMaterial.mainTexture.height);
+
         meshObject.transform.localScale = new Vector3(voxelSize, voxelSize, voxelSize);
         meshObject.transform.localPosition = new Vector3(volumeSize.x, volumeSize.y, volumeSize.z) * voxelSize / -2;
 
@@ -299,6 +307,7 @@ public class FallingSandVolume : MonoBehaviour
         List<Vector3> meshVertices = new List<Vector3>();
         List<int> meshTriangles = new List<int>();
         List<Vector3> meshNormals = new List<Vector3>();
+        List<Vector2> meshUVs = new List<Vector2>();
 
         for (int i = 0; i < XYZ_VOLUME; i++)
         {
@@ -309,9 +318,27 @@ public class FallingSandVolume : MonoBehaviour
                 for (int j = ADJ_PX; j < ADJ_NY; j++)
                 {
                     Voxel neighbor = GetVoxel(neighbors[j]);
+                    if (neighbor == Voxel.None || neighbor == Voxel.Wall || neighbor == Voxel.Water)
+                    {
+                        AddMeshFace(
+                            meshVertices, meshTriangles, meshNormals, meshUVs,
+                            currentVoxel, i, j
+                        );
+                    }
+                }
+            }
+            else if (currentVoxel == Voxel.Water)
+            {
+                GetAdjacentNeighbors(neighbors, i);
+                for (int j = ADJ_PX; j < ADJ_NY; j++)
+                {
+                    Voxel neighbor = GetVoxel(neighbors[j]);
                     if (neighbor == Voxel.None || neighbor == Voxel.Wall)
                     {
-                        AddMeshFace(meshVertices, meshTriangles, meshNormals, i, j);
+                        AddMeshFace(
+                            meshVertices, meshTriangles, meshNormals, meshUVs,
+                            currentVoxel, i, j
+                        );
                     }
                 }
             }
@@ -322,10 +349,11 @@ public class FallingSandVolume : MonoBehaviour
         mesh.SetVertices(meshVertices);
         mesh.SetTriangles(meshTriangles, 0);
         mesh.SetNormals(meshNormals);
+        mesh.SetUVs(0, meshUVs);
         meshFilter.mesh = mesh;
     }
 
-    private void AddMeshFace(List<Vector3> vertices, List<int> tris, List<Vector3> normals, int index, int direction)
+    private void AddMeshFace(List<Vector3> vertices, List<int> tris, List<Vector3> normals, List<Vector2> UVs, Voxel voxel, int index, int direction)
     {
         int x = 0;
         int y = 0;
@@ -340,9 +368,14 @@ public class FallingSandVolume : MonoBehaviour
             vertices.Add(pos + addedVertices[i]);
         }
 
+        tris.AddRange(new int[] {vindex, vindex+2, vindex+1, vindex+1, vindex+2, vindex+3});
+
         Vector3 normal = FaceNormals[direction];
-        tris.AddRange(new int[] { vindex, vindex + 2, vindex + 1, vindex + 1, vindex + 2, vindex + 3 });
         normals.AddRange(new Vector3[] { normal, normal, normal, normal });
+
+        float voxelUVSize = (float) meshMaterialSize.y / meshMaterialSize.x;
+        float uvx = (int) voxel * voxelUVSize;
+        UVs.AddRange(new Vector2[] {new(uvx, 0), new(uvx+voxelUVSize, 0), new(uvx, 1), new(uvx+voxelUVSize, 1)});
     }
 
     private Voxel GetVoxel(int index)
