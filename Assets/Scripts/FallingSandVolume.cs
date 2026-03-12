@@ -1,9 +1,130 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Unity.Jobs;
+using UnityEngine.InputSystem.Utilities;
+using Unity.Collections;
+using UnityEngine.Rendering;
+using Unity.Collections.LowLevel.Unsafe;
+using Unity.Mathematics;
 
 public class FallingSandVolume : MonoBehaviour
 {
+    public enum Voxel : byte
+    {
+        None,
+        Sand,
+        Wall
+    }
+
+    struct VoxelUpdateJob : IJobParallelFor
+    {
+        [ReadOnly]
+        public int3 volumeSize;
+
+        [ReadOnly]
+        public NativeArray<Voxel> readVolume;
+        [WriteOnly]
+        [NativeDisableParallelForRestriction]
+        public NativeArray<Voxel> writeVolume;
+
+        [NativeDisableParallelForRestriction]
+        public NativeArray<int> neighborsBuffer;
+        [NativeDisableParallelForRestriction]
+        public NativeArray<int> randDirectionBuffer;        
+        [NativeDisableParallelForRestriction]
+        public NativeArray<Unity.Mathematics.Random> randomsBuffer;
+
+        [NativeSetThreadIndex]
+        private int threadIndex;
+
+        private Voxel GetVoxel(int index)
+        {
+            return index == -1 ? Voxel.Wall : readVolume[index];
+        }
+
+        private void IndexToPos(ref int x, ref int y, ref int z, int index) {
+            x = index % volumeSize.x;
+            z = index / volumeSize.x % volumeSize.z;
+            y = index / (volumeSize.x * volumeSize.z);
+        }
+
+        private int PosToIndex(int x, int y, int z)
+        {
+            if (x < 0 || x >= volumeSize.x || y < 0 || y >= volumeSize.y || z < 0 || z >= volumeSize.z)
+            {
+                return -1;
+            }
+
+            return x + z * volumeSize.x + y * volumeSize.x * volumeSize.z;
+        }
+
+        private void GetSandNeighbors(NativeSlice<int> dest, int index)
+        {
+            int x = 0;
+            int y = 0;
+            int z = 0;
+            IndexToPos(ref x, ref y, ref z, index);
+
+            dest[DOWN] = PosToIndex(x, y-1, z);
+            dest[DOWN_PX] = PosToIndex(x+1, y-1, z);
+            dest[DOWN_NX] = PosToIndex(x-1, y-1, z);
+            dest[DOWN_PZ] = PosToIndex(x, y-1, z+1);
+            dest[DOWN_NZ] = PosToIndex(x, y-1, z-1);
+        }
+
+        private void ShuffleDirections(NativeSlice<int> directions)
+        {
+            Unity.Mathematics.Random random = randomsBuffer[threadIndex];
+            int n = directions.Length;
+            for (int i = 0; i < n; i++)
+            {
+                int randomIndex = Math.Abs(random.NextInt()) % (n - i) + i;
+
+                int temp = directions[i];
+                directions[i] = directions[randomIndex];
+                directions[randomIndex] = temp;
+            }
+        }
+
+        public void Execute(int i)
+        {   
+            NativeSlice<int> neighbors = neighborsBuffer.Slice(threadIndex * 6, 6);
+            Voxel currentVoxel = readVolume[i];
+
+            switch (currentVoxel)
+            {
+                case Voxel.Sand:
+                    GetSandNeighbors(neighbors, i);
+                    int posYNeighbor = neighbors[DOWN];
+                    if (GetVoxel(posYNeighbor) == Voxel.None)
+                    {
+                        writeVolume[posYNeighbor] = Voxel.Sand;
+                    }
+                    else
+                    {
+                        bool movedDiagonally = false;
+                        NativeSlice<int> randDirections = randDirectionBuffer.Slice(threadIndex * 4, 4);
+
+                        foreach (int j in randDirections)
+                        {
+                            if (GetVoxel(neighbors[j]) == Voxel.None)
+                            {
+                                writeVolume[neighbors[j]] = Voxel.Sand;
+                                movedDiagonally = true;
+                                ShuffleDirections(randDirections);
+                                break;
+                            }
+                        }
+                        if (!movedDiagonally)
+                        {
+                            writeVolume[i] = Voxel.Sand;
+                        }
+                    }
+                    break;
+            }
+        }
+    }
     [SerializeField] private GameObject meshObject;
 
     [SerializeField] private Vector3Int volumeSize;
@@ -11,19 +132,14 @@ public class FallingSandVolume : MonoBehaviour
 
     [SerializeField] private float stepsPerSecond = 60;
 
+    [SerializeField] private int threadCount = 16;
+
     private MeshFilter meshFilter;
 
     private int XZ_AREA = 0;
     private int XYZ_VOLUME = 0;
 
     private float accumulatedTime = 0;
-
-    public enum Voxel : byte
-    {
-        None,
-        Sand,
-        Wall
-    }
 
     const int DOWN = 0;
     const int DOWN_PX = 1;
@@ -67,8 +183,8 @@ public class FallingSandVolume : MonoBehaviour
         new(0, 1, 0), new(0, -1, 0)
     };
 
-    private Voxel[] readVolume;
-    private Voxel[] writeVolume;
+    private NativeArray<Voxel> readVolume;
+    private NativeArray<Voxel> writeVolume;
 
     public void SetVoxel(int x, int y, int z, Voxel voxel)
     {
@@ -108,8 +224,16 @@ public class FallingSandVolume : MonoBehaviour
 
         XZ_AREA = volumeSize.x * volumeSize.z;
         XYZ_VOLUME = XZ_AREA * volumeSize.y;
-        readVolume = new Voxel[XYZ_VOLUME];
-        writeVolume = new Voxel[XYZ_VOLUME];
+        readVolume = new NativeArray<Voxel>(XYZ_VOLUME, Allocator.Persistent);
+        writeVolume = new NativeArray<Voxel>(XYZ_VOLUME, Allocator.Persistent);
+        readVolume.FillArray(Voxel.None);
+        writeVolume.FillArray(Voxel.None);
+    }
+
+    void OnDestroy()
+    {
+        readVolume.Dispose();
+        writeVolume.Dispose();
     }
 
     private void Update()
@@ -129,52 +253,44 @@ public class FallingSandVolume : MonoBehaviour
 
     private void UpdateVolume()
     {
-        int[] neighbors = new int[6];
-        int[] randDirectionBuffer = new int[4] { DOWN_PX, DOWN_NX, DOWN_PZ, DOWN_NZ };
-        ShuffleArray(randDirectionBuffer);
-
         // Clear the write buffer
-        Array.Fill(writeVolume, Voxel.None);
+        writeVolume.FillArray(Voxel.None);
 
-        for (int i = 0; i < XYZ_VOLUME; i++)
+        NativeArray<int> neighborsBuffer = new NativeArray<int>(6 * threadCount, Allocator.TempJob);
+        NativeArray<int> randDirectionBuffer = new NativeArray<int>(4 * threadCount, Allocator.TempJob);
+        NativeArray<Unity.Mathematics.Random> randomsBuffer = new NativeArray<Unity.Mathematics.Random>(threadCount, Allocator.TempJob);
+
+        // Fill rand direction buffer
+        for (int i = 0; i < 4 * threadCount; i++)
         {
-            Voxel currentVoxel = readVolume[i];
-
-            switch (currentVoxel)
-            {
-                case Voxel.Sand:
-                    GetSandNeighbors(neighbors, i);
-                    int posYNeighbor = neighbors[DOWN];
-                    if (GetVoxel(readVolume, posYNeighbor) == Voxel.None)
-                    {
-                        writeVolume[posYNeighbor] = Voxel.Sand;
-                    }
-                    else
-                    {
-                        bool movedDiagonally = false;
-                        foreach (int j in randDirectionBuffer)
-                        {
-                            if (GetVoxel(readVolume, neighbors[j]) == Voxel.None)
-                            {
-                                writeVolume[neighbors[j]] = Voxel.Sand;
-                                movedDiagonally = true;
-                                ShuffleArray(randDirectionBuffer);
-                                break;
-                            }
-                        }
-                        if (!movedDiagonally)
-                        {
-                            writeVolume[i] = Voxel.Sand;
-                        }
-                    }
-                    break;
-            }
+            randDirectionBuffer[i] = i % 4 + 1;
+        }
+        for (int i = 0; i < threadCount; i++)
+        {
+            randomsBuffer[i] = new Unity.Mathematics.Random((uint)UnityEngine.Random.Range(0, int.MaxValue));
         }
 
+        VoxelUpdateJob job = new VoxelUpdateJob()
+        {
+            volumeSize = new int3(volumeSize.x, volumeSize.y, volumeSize.z),
+            readVolume = readVolume,
+            writeVolume = writeVolume,
+            neighborsBuffer = neighborsBuffer,
+            randDirectionBuffer = randDirectionBuffer,
+            randomsBuffer = randomsBuffer
+        };
+
+        job.Schedule(XYZ_VOLUME, threadCount).Complete();
+
         // Swap the buffers
-        Voxel[] temp = readVolume;
+        NativeArray<Voxel> temp = readVolume;
         readVolume = writeVolume;
         writeVolume = temp;
+
+        // Cleanup
+        neighborsBuffer.Dispose();
+        randDirectionBuffer.Dispose();
+        randomsBuffer.Dispose();
     }
 
     private void GenerateMesh()
@@ -192,7 +308,7 @@ public class FallingSandVolume : MonoBehaviour
                 GetAdjacentNeighbors(neighbors, i);
                 for (int j = ADJ_PX; j < ADJ_NY; j++)
                 {
-                    Voxel neighbor = GetVoxel(readVolume, neighbors[j]);
+                    Voxel neighbor = GetVoxel(neighbors[j]);
                     if (neighbor == Voxel.None || neighbor == Voxel.Wall)
                     {
                         AddMeshFace(meshVertices, meshTriangles, meshNormals, i, j);
@@ -202,6 +318,7 @@ public class FallingSandVolume : MonoBehaviour
         }
 
         Mesh mesh = new Mesh();
+        mesh.indexFormat = IndexFormat.UInt32;
         mesh.SetVertices(meshVertices);
         mesh.SetTriangles(meshTriangles, 0);
         mesh.SetNormals(meshNormals);
@@ -228,24 +345,19 @@ public class FallingSandVolume : MonoBehaviour
         normals.AddRange(new Vector3[] { normal, normal, normal, normal });
     }
 
-    private Voxel GetVoxel(Voxel[] buffer, int index)
+    private Voxel GetVoxel(int index)
     {
-        return index == -1 ? Voxel.Wall : buffer[index];
+        return index == -1 ? Voxel.Wall : readVolume[index];
     }
 
     private void IndexToPos(ref int x, ref int y, ref int z, int index) {
         x = index % volumeSize.x;
         z = index / volumeSize.x % volumeSize.z;
-        y = index / (XZ_AREA);
+        y = index / XZ_AREA;
     }
 
     private int PosToIndex(int x, int y, int z)
     {
-        // Clamp to [-1, XYZ_VOLUME] then add 1 to create the following arrangement:
-        // volume[0] = wall
-        // volume[1..XYZ_VOLUME] = actual voxel grid
-        // volume[XYZ_VOLUME+1] = wall
-        // This makes it so that any out of bounds indices automatically return a wall.
         if (x < 0 || x >= volumeSize.x || y < 0 || y >= volumeSize.y || z < 0 || z >= volumeSize.z)
         {
             return -1;
@@ -269,37 +381,10 @@ public class FallingSandVolume : MonoBehaviour
         dest[ADJ_NY] = PosToIndex(x, y-1, z);
     }
 
-    private void GetSandNeighbors(int[] dest, int index)
-    {
-        int x = 0;
-        int y = 0;
-        int z = 0;
-        IndexToPos(ref x, ref y, ref z, index);
-
-        dest[DOWN] = PosToIndex(x, y-1, z);
-        dest[DOWN_PX] = PosToIndex(x+1, y-1, z);
-        dest[DOWN_NX] = PosToIndex(x-1, y-1, z);
-        dest[DOWN_PZ] = PosToIndex(x, y-1, z+1);
-        dest[DOWN_NZ] = PosToIndex(x, y-1, z-1);
-    }
-
     private void OnDrawGizmos()
     {
         Vector3 fullVolumeSize = new Vector3(volumeSize.x, volumeSize.y, volumeSize.z) * voxelSize;
         Gizmos.color = new Color(1.0f, 1.0f, 1.0f, 0.75f);
         Gizmos.DrawWireCube(transform.position, fullVolumeSize);
-    }
-
-    private void ShuffleArray<T>(T[] array)
-    {
-        int n = array.Length;
-        for (int i = 0; i < n; i++)
-        {
-            int randomIndex = UnityEngine.Random.Range(i, n);
-
-            T temp = array[i];
-            array[i] = array[randomIndex];
-            array[randomIndex] = temp;
-        }
     }
 }
