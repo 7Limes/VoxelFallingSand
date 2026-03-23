@@ -1728,7 +1728,7 @@ MonoBehaviour:
   volumeSize: {x: 64, y: 64, z: 64}
   voxelSize: 0.01
   stepsPerSecond: 20
-  threadCount: 16
+  threadCount: 32
 --- !u!4 &735151734
 Transform:
   m_ObjectHideFlags: 0
