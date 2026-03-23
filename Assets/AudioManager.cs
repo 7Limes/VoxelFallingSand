@@ -4,27 +4,51 @@ using UnityEngine;
 
 public class AudioManager : MonoBehaviour
 {
-    public static AudioManager instance;
+    [SerializeField] public AudioSource audioSource;
+    public AudioClip Eraser;
+    public AudioClip Turndial;
+    public AudioClip Sand;
+    public AudioClip Water;
 
-    private void Awake()
+    void Start()
     {
-        instance = this;
+        audioSource = GetComponent<AudioSource>();
     }
 
-    public void PlaySFX(AudioClip audioClip, float volume = 1.0f)
+
+    public void playEraser()
     {
-        StartCoroutine(PlaySFXCoroutine(audioClip, volume));
+        audioSource.PlayOneShot(Eraser, 0.5f);
     }
 
-    IEnumerator PlaySFXCoroutine(AudioClip audioClip, float volume = 1.0f)
+    public void playTurndial()
     {
-        AudioSource audioSource = gameObject.AddComponent<AudioSource>();
-        audioSource.clip = audioClip;
-        audioSource.volume = volume;
+        audioSource.PlayOneShot(Turndial, 0.5f);
+    }
+   
+    public void playSand()
+    {
+        audioSource.clip = Sand;
+        audioSource.loop = true;
         audioSource.Play();
+    }
+  
+    protected void stopSand()
+    {
+        audioSource.Stop();
+        audioSource.loop = false;
+    }
 
-        yield return new WaitForSeconds(audioSource.clip.length * 2);
+    public void playWater()
+    {
+        audioSource.clip = Water;
+        audioSource.loop = true;
+        audioSource.Play();
+    }
 
-        Destroy(audioSource);
+    protected void stopWater()
+    {
+        audioSource.Stop();
+        audioSource.loop = false;
     }
 }

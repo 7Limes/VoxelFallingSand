@@ -904,6 +904,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9d7b7c3ee22ec0d468d1aee2a5e518d7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  audioSource: {fileID: 0}
+  Eraser: {fileID: 0}
+  Turndial: {fileID: 0}
+  Sand: {fileID: 0}
+  Water: {fileID: 0}
 --- !u!4 &588925886
 Transform:
   m_ObjectHideFlags: 0
@@ -1185,7 +1190,7 @@ AudioSource:
   m_GameObject: {fileID: 966072807}
   m_Enabled: 0
   serializedVersion: 4
-  OutputAudioMixerGroup: {fileID: -1058549217176593207, guid: ae97de9b1c6c0e64dbdb20700a6b744b, type: 2}
+  OutputAudioMixerGroup: {fileID: 0}
   m_audioClip: {fileID: 0}
   m_Resource: {fileID: 8300000, guid: 19d0153ca6c8f7e4a9831726b577d822, type: 3}
   m_PlayOnAwake: 1
@@ -1959,7 +1964,7 @@ AudioSource:
   m_GameObject: {fileID: 1249617917}
   m_Enabled: 1
   serializedVersion: 4
-  OutputAudioMixerGroup: {fileID: -5106551769795948851, guid: ae97de9b1c6c0e64dbdb20700a6b744b, type: 2}
+  OutputAudioMixerGroup: {fileID: 0}
   m_audioClip: {fileID: 0}
   m_Resource: {fileID: 0}
   m_PlayOnAwake: 0
