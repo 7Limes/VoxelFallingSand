@@ -33,7 +33,7 @@ public class AudioManager : MonoBehaviour
         audioSource.Play();
     }
   
-    protected void stopSand()
+    public void stopSand()
     {
         audioSource.Stop();
         audioSource.loop = false;
@@ -43,10 +43,11 @@ public class AudioManager : MonoBehaviour
     {
         audioSource.clip = Water;
         audioSource.loop = true;
+        audioSource.volume = 0.5f;
         audioSource.Play();
     }
 
-    protected void stopWater()
+    public void stopWater()
     {
         audioSource.Stop();
         audioSource.loop = false;
